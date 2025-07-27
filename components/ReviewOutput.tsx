@@ -1,6 +1,11 @@
 
 import React, { useState } from 'react';
 import { ReviewResult, FeedbackItem } from '../types';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { FaRobot } from 'react-icons/fa';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 interface ReviewOutputProps {
   review: ReviewResult | null;
@@ -8,6 +13,8 @@ interface ReviewOutputProps {
   commitMessage: string | null;
   isLoading: boolean;
   error: string | null;
+  code?: string; // Add code prop for inline annotation
+  language?: string;
 }
 
 const BugIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 8l2-2m0 0l2 2m-2-2v4m-4-4H8m4 0L8 4m0 0L6 6m2-2v4m0 0H4m16 8l-2 2m0 0l-2-2m2 2v-4m4 4h-4m-4 0l-2-2m0 0l-2 2m2-2v-4m0 0H4" /></svg>;
@@ -91,6 +98,11 @@ const CodeComparison: React.FC<{ problemCode: string, solutionCode: string }> = 
     )
 };
 
+const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, language = 'javascript' }) => (
+  <SyntaxHighlighter language={language} style={atomDark} customStyle={{ borderRadius: 8, fontSize: '1em', margin: 0 }}>
+    {code}
+  </SyntaxHighlighter>
+);
 
 const FeedbackCard: React.FC<{ item: FeedbackItem }> = ({ item }) => (
     <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
@@ -130,45 +142,105 @@ const FeedbackSection: React.FC<{ title: string; items: FeedbackItem[] | undefin
     );
 }
 
+const InlineAnnotatedCode: React.FC<{ code: string; feedback: FeedbackItem[]; language?: string }> = ({ code, feedback, language = 'javascript' }) => {
+  // Split code into lines
+  const codeLines = code.split('\n');
+  // Map line numbers to feedback
+  const feedbackMap: Record<number, FeedbackItem[]> = {};
+  feedback.forEach(item => {
+    const lineNum = typeof item.line === 'number' ? item.line : parseInt(String(item.line), 10);
+    if (!isNaN(lineNum)) {
+      if (!feedbackMap[lineNum]) feedbackMap[lineNum] = [];
+      feedbackMap[lineNum].push(item);
+    }
+  });
+  return (
+    <pre className="relative rounded-lg border border-cyan-700 bg-gray-900 overflow-x-auto text-sm font-mono p-0">
+      {codeLines.map((line, idx) => {
+        const lineNum = idx + 1;
+        const items = feedbackMap[lineNum] || [];
+        return (
+          <div key={lineNum} className={`flex items-start group ${items.length ? 'bg-cyan-950/40' : ''}`}> 
+            <span className="select-none w-10 text-right pr-2 text-gray-600 group-hover:text-cyan-400">{lineNum}</span>
+            <span className="flex-1 whitespace-pre-wrap pr-2">{line}</span>
+            {items.length > 0 && (
+              <span className="ml-2 flex flex-col gap-1">
+                {items.map((item, i) => (
+                  <span key={i} className="inline-block bg-cyan-800/80 text-cyan-100 px-2 py-1 rounded shadow text-xs max-w-xs">
+                    <b>{item.issue}:</b> {item.recommendation}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </pre>
+  );
+};
+
 const renderContent = (props: ReviewOutputProps) => {
-    const { review, explanation, commitMessage, isLoading, error } = props;
+    const { review, explanation, commitMessage, isLoading, error, code, language } = props;
+    const [showInline, setShowInline] = useState(false);
     
     if (isLoading) return <SkeletonLoader />;
     if (error) return <div className="bg-red-900/50 border border-red-500 text-red-300 p-4 rounded-lg">{error}</div>;
 
-    if (review) {
+    if (review && code) {
         return (
             <div className="space-y-8">
-                <div>
+              <div className="flex items-center gap-4 mb-2">
+                <button
+                  className="px-3 py-1 rounded bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold shadow"
+                  onClick={() => setShowInline(v => !v)}
+                  title={showInline ? 'Show summary view' : 'Show inline annotated view'}
+                >
+                  {showInline ? 'Summary View' : 'Inline Annotated View'}
+                </button>
+              </div>
+              {showInline ? (
+                <>
+                  <h3 className="text-lg font-semibold text-cyan-300 mb-2">Inline Feedback</h3>
+                  <InlineAnnotatedCode code={code} feedback={[
+                    ...(review.bugs || []),
+                    ...(review.security || []),
+                    ...(review.performance || []),
+                    ...(review.improvementsAndBestPractices || []),
+                    ...(review.clarityAndStyle || []),
+                    ...(review.documentation || []),
+                    ...(review.architecture || []),
+                    ...(review.codeSmells || []),
+                  ]} language={language} />
+                </>
+              ) : (
+                <>
+                  <div>
                     <h3 className="text-lg font-semibold text-gray-200 mb-2">Overall Summary</h3>
                     <p className="text-gray-300 whitespace-pre-wrap">{review.overallSummary}</p>
-                </div>
-                <FeedbackSection title="Potential Bugs" items={review.bugs} icon={<BugIcon />} />
-                <FeedbackSection title="Security Vulnerabilities" items={review.security} icon={<SecurityIcon />} />
-                <FeedbackSection title="Performance Improvements" items={review.performance} icon={<PerformanceIcon />} />
-                <FeedbackSection title="Architecture" items={review.architecture} icon={<ArchIcon />} />
-                <FeedbackSection title="Code Smells" items={review.codeSmells} icon={<SmellIcon />} />
-                <FeedbackSection title="Improvements & Best Practices" items={review.improvementsAndBestPractices} icon={<SuggestionIcon />} />
-                <FeedbackSection title="Clarity & Style Issues" items={review.clarityAndStyle} icon={<StyleIcon />} />
-                <FeedbackSection title="Documentation Suggestions" items={review.documentation} icon={<DocsIcon />} />
-
-                {review.fullRefactoredCode && (
-                     <div className="border-t border-gray-700/50 pt-8">
-                        <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center gap-2">
-                            <SparklesIcon />
-                            Fully Enhanced Code
-                        </h3>
-                         <p className="text-sm text-gray-400 mb-4">This is the complete code with all suggestions applied.</p>
-                        <div className="relative bg-gray-900 rounded-md border border-gray-700">
-                            <pre className="p-4 pt-10 overflow-x-auto">
-                                <code className="text-sm text-gray-300 font-mono">
-                                    {review.fullRefactoredCode.trim()}
-                                </code>
-                            </pre>
-                            <CopyButton text={review.fullRefactoredCode} label="Copy Full Code" />
-                        </div>
+                  </div>
+                  <FeedbackSection title="Potential Bugs" items={review.bugs} icon={<BugIcon />} />
+                  <FeedbackSection title="Security Vulnerabilities" items={review.security} icon={<SecurityIcon />} />
+                  <FeedbackSection title="Performance Improvements" items={review.performance} icon={<PerformanceIcon />} />
+                  <FeedbackSection title="Architecture" items={review.architecture} icon={<ArchIcon />} />
+                  <FeedbackSection title="Code Smells" items={review.codeSmells} icon={<SmellIcon />} />
+                  <FeedbackSection title="Improvements & Best Practices" items={review.improvementsAndBestPractices} icon={<SuggestionIcon />} />
+                  <FeedbackSection title="Clarity & Style Issues" items={review.clarityAndStyle} icon={<StyleIcon />} />
+                  <FeedbackSection title="Documentation Suggestions" items={review.documentation} icon={<DocsIcon />} />
+                  {review.fullRefactoredCode && (
+                    <div className="border-t border-gray-700/50 pt-8">
+                      <h3 className="text-lg font-semibold text-gray-200 mb-3 flex items-center gap-2">
+                        <SparklesIcon />
+                        Fully Enhanced Code
+                      </h3>
+                      <p className="text-sm text-gray-400 mb-4">This is the complete code with all suggestions applied.</p>
+                      <div className="relative bg-gray-900 rounded-md border border-gray-700">
+                        <CodeBlock code={review.fullRefactoredCode.trim()} language="javascript" />
+                        <CopyButton text={review.fullRefactoredCode} label="Copy Full Code" />
+                      </div>
                     </div>
-                )}
+                  )}
+                </>
+              )}
             </div>
         )
     }
@@ -196,10 +268,18 @@ const renderContent = (props: ReviewOutputProps) => {
         )
     }
 
+    // Onboarding/empty state
     return (
-        <div className="text-center text-gray-500 py-16">
-            <p className="text-lg">Your results will appear here.</p>
-            <p>Select a tool and provide your code to get started.</p>
+        <div className="flex flex-col items-center justify-center text-center text-gray-400 py-16 gap-4">
+            <FaRobot size={48} className="text-cyan-400 mb-2 animate-bounce" />
+            <h2 className="text-2xl font-bold text-cyan-300 mb-2">Welcome to AI Code Review!</h2>
+            <p className="max-w-xl text-base mb-2">Paste your code or a git diff in the left panel, select your language or let us auto-detect, and click <b>Review</b> to get instant, expert feedback on bugs, performance, security, and more.</p>
+            <ul className="text-sm text-gray-500 list-disc list-inside mb-2">
+                <li>Supports all major languages, Bash, and git diffs</li>
+                <li>Try the <b>Explain</b> or <b>Generate Commit</b> tools for extra insights</li>
+                <li>Use the <b>Review History</b> sidebar to revisit past results</li>
+            </ul>
+            <span className="text-xs text-gray-600">Your code never leaves your browser except for secure review by Gemini AI.</span>
         </div>
     );
 }
@@ -216,6 +296,7 @@ export const ReviewOutput: React.FC<ReviewOutputProps> = (props) => {
   
   return (
     <div className="bg-gray-800 rounded-lg shadow-2xl p-6 overflow-y-auto h-full max-h-[80vh] lg:max-h-full">
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
       <h2 className="text-xl font-semibold text-gray-200 mb-4 sticky top-0 bg-gray-800 py-2 -mt-6 pt-6 z-10">{getTitle()}</h2>
       <div className="mt-4">
         {renderContent(props)}

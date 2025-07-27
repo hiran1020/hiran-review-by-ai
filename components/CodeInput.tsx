@@ -1,6 +1,8 @@
-
-import React from 'react';
+import React, { useEffect } from 'react';
 import { LANGUAGES, REVIEW_FOCUS_OPTIONS } from '../constants';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { FaSun, FaMoon } from 'react-icons/fa';
 
 interface CodeInputProps {
   code: string;
@@ -40,11 +42,11 @@ const ToggleSwitch: React.FC<{enabled: boolean, onChange: (enabled: boolean) => 
 );
 
 
-export const CodeInput: React.FC<CodeInputProps> = (props) => {
+export const CodeInput: React.FC<CodeInputProps & { theme?: 'dark' | 'light', onToggleTheme?: () => void }> = (props) => {
   const { 
     code, setCode, language, setLanguage, onReview, onExplain, onGenerateCommit, isLoading,
     reviewType, setReviewType, framework, setFramework, projectContext, setProjectContext,
-    focusAreas, onFocusChange
+    focusAreas, onFocusChange, theme = 'dark', onToggleTheme
   } = props;
     
   const handleReviewTypeChange = (isDiff: boolean) => {
@@ -57,12 +59,36 @@ export const CodeInput: React.FC<CodeInputProps> = (props) => {
       }
   };
 
+  useEffect(() => {
+    if (language === 'auto' && code.trim().startsWith('curl')) {
+      setLanguage('bash');
+    }
+  }, [code, language, setLanguage]);
+
+  const handleClear = () => {
+    setCode('');
+    setFramework('');
+    setProjectContext('');
+    setLanguage('auto');
+  };
+
   return (
     <div className="bg-gray-800 rounded-lg shadow-2xl p-6 flex flex-col h-full space-y-4">
       
-      <div>
+      <div className="flex justify-between items-center mb-2">
         <h2 className="text-xl font-semibold text-gray-200 mb-4">Your Code</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {onToggleTheme && (
+          <button
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="ml-2 p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-cyan-400"
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <FaSun /> : <FaMoon />}
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
@@ -89,7 +115,6 @@ export const CodeInput: React.FC<CodeInputProps> = (props) => {
             rows={2}
             className="mt-4 w-full bg-gray-700 border border-gray-600 rounded-md p-2.5 font-sans text-sm text-gray-300 resize-y focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
         />
-      </div>
 
       <div className="border-t border-gray-700 pt-4">
          <h3 className="text-lg font-semibold text-gray-300 mb-3">Review Configuration</h3>
@@ -122,18 +147,30 @@ export const CodeInput: React.FC<CodeInputProps> = (props) => {
       </div>
       
       <div className="flex-grow flex flex-col">
+        <div>
           <textarea
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder={reviewType === 'diff' ? 'Paste your git diff here...' : 'Paste your code here...'}
-            className="flex-grow bg-gray-900 border border-gray-700 rounded-md p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 transition w-full min-h-[300px] lg:min-h-0"
+            className="flex-grow bg-gray-900 border border-gray-700 rounded-md p-4 font-mono text-sm text-gray-300 resize-none focus:outline-none focus:ring-2 focus:ring-cyan-500 transition w-full min-h-[300px] lg:min-h-0 mb-2"
+            style={{ fontFamily: 'Fira Mono, Menlo, monospace', background: theme === 'dark' ? '#18181b' : '#f3f4f6', color: theme === 'dark' ? '#e5e7eb' : '#222' }}
           />
+          {/* Syntax highlighted preview below textarea */}
+          {code && (
+            <div className="mt-2 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
+              <SyntaxHighlighter language={language === 'auto' ? 'javascript' : language} style={atomDark} customStyle={{ margin: 0, borderRadius: 8, fontSize: '1em' }}>
+                {code}
+              </SyntaxHighlighter>
+            </div>
+          )}
+        </div>
       </div>
       
       <div className="space-y-3">
         <button
           onClick={onReview}
           disabled={isLoading}
+          title="Run a full code review"
           className="w-full flex items-center justify-center bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition duration-300 ease-in-out shadow-lg transform hover:scale-105 disabled:scale-100"
         >
           {isLoading ? <LoadingSpinner /> : null}
@@ -143,6 +180,7 @@ export const CodeInput: React.FC<CodeInputProps> = (props) => {
             <button
               onClick={onExplain}
               disabled={isLoading}
+              title="Get a plain-English explanation of your code"
               className="w-full flex items-center justify-center bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition"
             >
               Explain Code
@@ -150,12 +188,20 @@ export const CodeInput: React.FC<CodeInputProps> = (props) => {
             <button
               onClick={onGenerateCommit}
               disabled={isLoading || reviewType !== 'diff'}
+              title={reviewType !== 'diff' ? 'Only available for Git Diffs' : 'Generate a commit message for this diff'}
               className="w-full flex items-center justify-center bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition"
-              title={reviewType !== 'diff' ? 'Only available for Git Diffs' : ''}
             >
               Generate Commit
             </button>
         </div>
+        <button
+          onClick={handleClear}
+          disabled={isLoading}
+          title="Clear all fields"
+          className="w-full mt-2 flex items-center justify-center bg-gray-700 hover:bg-gray-800 disabled:bg-gray-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-lg transition"
+        >
+          Clear
+        </button>
       </div>
 
     </div>
